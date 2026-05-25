@@ -89,15 +89,15 @@ const updateSetupBasedOnFeedback = (current: DetailedTuningProposal, feedback: T
     next.antiRollBar.front *= 0.9;
     next.damping.bump.front *= 0.9;
     next.aero.downforce.front += 5;
-    next.notes = `${current.notes} -> 進入アンダー対策`;
+    next.notes = `進入アンダー対策`;
   } else if (feedback.handling === 'ExitOver') {
     next.differential.accel *= 0.9;
     next.antiRollBar.rear *= 0.9;
     next.springs.spring.rear *= 0.95;
     next.aero.downforce.rear += 5;
-    next.notes = `${current.notes} -> 脱出オーバー対策`;
+    next.notes = `脱出オーバー対策`;
   } else {
-    next.notes = `${current.notes} -> ハンドリング良好`;
+    next.notes = `ハンドリング良好`;
   }
 
   if (feedback.brake === 'TooStrong' || feedback.brake === 'EasyLock') {
@@ -119,7 +119,8 @@ const updateSetupBasedOnFeedback = (current: DetailedTuningProposal, feedback: T
     notes.push('加速重視');
   }
 
-  next.notes = notes.length > 0 ? `${next.notes} (${notes.join(', ')})` : next.notes;
+  const cleanCurrentNotes = current.notes.split(' (')[0];
+  next.notes = notes.length > 0 ? `${cleanCurrentNotes} -> ${next.notes} (${notes.join(', ')})` : `${cleanCurrentNotes} -> ${next.notes}`;
   return next;
 };
 
@@ -228,7 +229,16 @@ export default function App() {
         
         <div style={{ opacity: isProcessing ? 0.3 : 1, fontSize: '12px' }}>
           ここにスクショ画像を<strong style={{color: '#38bdf8'}}>ドラッグ＆ドロップ</strong>、または
-          <input type="file" accept="image/*" onChange={(e) => processFile(e.target.files?.[0])} style={{ display: 'none' }} id="upload" />
+          <input 
+            type="file" 
+            accept="image/*" 
+            onChange={(e) => {
+              const file = e.target.files?.[0]; 
+              if (file) processFile(file);
+            }} 
+            style={{ display: 'none' }} 
+            id="upload" 
+          />
           <label htmlFor="upload" style={{ display: 'inline-block', padding: '5px 10px', backgroundColor: '#475569', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', marginLeft: '5px' }}>ファイルを選択</label>
         </div>
         {ocrMessage && <div style={{ marginTop: '5px', color: '#38bdf8', fontSize: '11px', fontWeight: 'bold' }}>{ocrMessage.text}</div>}
@@ -241,7 +251,7 @@ export default function App() {
           <div style={{ flex: 1 }}><button onClick={getInitialSetup} style={{ width: '100%', padding: '4px', backgroundColor: '#38bdf8', color: '#0f172a', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>初期セッティング提案</button></div>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <div>駆動系: {['AWD', 'RWD', 'FWD'].map(t => <button key={t} onClick={() => setDriveType(t)} style={{ padding: '3px 6px', margin: '0 2px', borderRadius: '3px', border: 'none', cursor: 'pointer', backgroundColor: driveType === t ? '#38bdf8' : '#475569', color: '#fff' }}>{t}</button>)}</div>
+          <div>駆動系: {(['AWD', 'RWD', 'FWD'] as const).map(t => <button key={t} onClick={() => setDriveType(t)} style={{ padding: '3px 6px', margin: '0 2px', borderRadius: '3px', border: 'none', cursor: 'pointer', backgroundColor: driveType === t ? '#38bdf8' : '#475569', color: '#fff' }}>{t}</button>)}</div>
           <div>用途: <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ padding: '3px', borderRadius: '3px', backgroundColor: '#1e293b', color: '#fff', border: 'none' }}>{['ストリート', 'ダート', 'クロスカントリー'].map(c => <option key={c} value={c}>{c}</option>)}</select></div>
         </div>
       </div>
@@ -285,10 +295,10 @@ export default function App() {
                 <ParameterField label="バンプ R" value={currentProposal.damping.bump.rear.toFixed(1)} />
               <strong style={{ fontSize: '12px', color: '#cbd5e1', marginTop: '3px', display: 'block' }}>ブレーキ</strong>
                 <ParameterField label="バランス %" value={currentProposal.brake.balance} />
-                <ParameterField label="圧力 %" value={currentProposal.brake.pressure} />
+                <ParameterField label="圧力 %" value={currentProposal.brake.pressure.toFixed(0)} />
               <strong style={{ fontSize: '12px', color: '#cbd5e1', marginTop: '3px', display: 'block' }}>デフ %</strong>
-                <ParameterField label="加速" value={currentProposal.differential.accel} />
-                <ParameterField label="減速" value={currentProposal.differential.decel} />
+                <ParameterField label="加速" value={currentProposal.differential.accel.toFixed(0)} />
+                <ParameterField label="減速" value={currentProposal.differential.decel.toFixed(0)} />
             </div>
           </div>
           <p style={{ margin: '3px 0', fontSize: '10px', color: '#94a3b8' }}>💡 上記の提案された数値をゲームに入力して、テスト走行を行ってください。</p>
@@ -299,9 +309,9 @@ export default function App() {
         <h4 style={{ margin: '0 0 10px 0', color: '#38bdf8', fontSize: '14px' }}>🏁 テスト走行のフィーリングを教えて！</h4>
         
         <div style={{ fontSize: '12px', marginBottom: '10px' }}>
-          <div style={{ marginBottom: '5px' }}>ハンドリング: {['Balanced', 'EntryUnder', 'ExitOver'].map(f => <button key={f} onClick={() => setFeedback({ ...feedback, handling: f as TestDriveFeedback['handling'] })} style={{ padding: '3px 6px', margin: '0 2px', borderRadius: '3px', border: 'none', cursor: 'pointer', backgroundColor: feedback.handling === f ? '#f87171' : '#475569', color: '#fff' }}>{feedbackHandlingMap[f as TestDriveFeedback['handling']]}</button>)}</div>
-          <div style={{ marginBottom: '5px' }}>ブレーキ: {['Good', 'TooStrong', 'NotWorking', 'EasyLock'].map(f => <button key={f} onClick={() => setFeedback({ ...feedback, brake: f as TestDriveFeedback['brake'] })} style={{ padding: '3px 6px', margin: '0 2px', borderRadius: '3px', border: 'none', cursor: 'pointer', backgroundColor: feedback.brake === f ? '#f87171' : '#475569', color: '#fff' }}>{feedbackBrakeMap[f as TestDriveFeedback['brake']]}</button>)}</div>
-          <div style={{ marginBottom: '5px' }}>速度関連: {['Good', 'MoreTopSpeed', 'BadAccel'].map(f => <button key={f} onClick={() => setFeedback({ ...feedback, speed: f as TestDriveFeedback['speed'] })} style={{ padding: '3px 6px', margin: '0 2px', borderRadius: '3px', border: 'none', cursor: 'pointer', backgroundColor: feedback.speed === f ? '#f87171' : '#475569', color: '#fff' }}>{feedbackSpeedMap[f as TestDriveFeedback['speed']]}</button>)}</div>
+          <div style={{ marginBottom: '5px' }}>ハンドリング: {(['Balanced', 'EntryUnder', 'ExitOver'] as const).map(f => <button key={f} onClick={() => setFeedback({ ...feedback, handling: f })} style={{ padding: '3px 6px', margin: '0 2px', borderRadius: '3px', border: 'none', cursor: 'pointer', backgroundColor: feedback.handling === f ? '#f87171' : '#475569', color: '#fff' }}>{feedbackHandlingMap[f]}</button>)}</div>
+          <div style={{ marginBottom: '5px' }}>ブレーキ: {(['Good', 'TooStrong', 'NotWorking', 'EasyLock'] as const).map(f => <button key={f} onClick={() => setFeedback({ ...feedback, brake: f })} style={{ padding: '3px 6px', margin: '0 2px', borderRadius: '3px', border: 'none', cursor: 'pointer', backgroundColor: feedback.brake === f ? '#f87171' : '#475569', color: '#fff' }}>{feedbackBrakeMap[f]}</button>)}</div>
+          <div style={{ marginBottom: '5px' }}>速度関連: {(['Good', 'MoreTopSpeed', 'BadAccel'] as const).map(f => <button key={f} onClick={() => setFeedback({ ...feedback, speed: f })} style={{ padding: '3px 6px', margin: '0 2px', borderRadius: '3px', border: 'none', cursor: 'pointer', backgroundColor: feedback.speed === f ? '#f87171' : '#475569', color: '#fff' }}>{feedbackSpeedMap[f]}</button>)}</div>
         </div>
 
         <div style={{ backgroundColor: '#334155', padding: '10px', borderRadius: '6px', boxSizing: 'border-box' }}>
@@ -335,8 +345,8 @@ export default function App() {
                     {`スタビ: F ${log.proposal.antiRollBar.front.toFixed(1)}, R ${log.proposal.antiRollBar.rear.toFixed(1)}\n`}
                     {`スプリング: F ${log.proposal.springs.spring.front.toFixed(1)}, R ${log.proposal.springs.spring.rear.toFixed(1)} kg/mm\n`}
                     {`車高: F ${log.proposal.springs.rideHeight.front}, R ${log.proposal.springs.rideHeight.rear} mm\n`}
-                    {`ブレーキ pressure: ${log.proposal.brake.pressure}%\n`}
-                    {`デフ accel: ${log.proposal.differential.accel}%, decel: ${log.proposal.differential.decel}%`}
+                    {`ブレーキ pressure: ${log.proposal.brake.pressure.toFixed(0)}%\n`}
+                    {`デフ accel: ${log.proposal.differential.accel.toFixed(0)}%, decel: ${log.proposal.differential.decel.toFixed(0)}%`}
                   </div>
                 </details>
                 <p style={{ margin: '2px 0', color: '#cbd5e1' }}>💬 メモ: {log.note}</p>
