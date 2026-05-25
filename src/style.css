@@ -2,7 +2,7 @@
 
 body {
   /* 画像を src/フォルダから読み込む */
-  background-image: url('./bg-forza.jpg');
+  background-image: url('/bg-forza.jpg');
 
   /* 背景画像を画面いっぱいに広げる設定（王道セット） */
   background-size: cover;
