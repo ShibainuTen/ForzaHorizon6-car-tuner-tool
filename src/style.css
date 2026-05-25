@@ -3,7 +3,7 @@
 /* ⭕ body だけでなく #root にも背景を強制適用する */
 body, #root {
   /* 画像を読み込む（完全小文字・スラッシュあり・セミコロンの前important） */
-  background-image: url('/bg-forza.jpg') !important;
+  background-image: url('./bg-forza.jpg') !important;
 
   /* 背景画像を画面いっぱいに広げる設定 */
   background-size: cover !important;
