@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import './style.css';
 
 // ==================== 🛠️ データ構造定義 ====================
@@ -138,11 +138,6 @@ export default function App() {
   const [driveType, setDriveType] = useState('AWD');
   const [category, setCategory] = useState('ストリート');
 
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [ocrMessage, setOcrMessage] = useState<{ type: 'success' | 'error' | 'processing'; text: string } | null>(null);
-
   const [currentProposal, setCurrentProposal] = useState<DetailedTuningProposal | null>(calculateInitialSetup(1300, 'AWD', 'ストリート'));
   const [runCount, setRunCount] = useState(1);
 
@@ -152,27 +147,6 @@ export default function App() {
   const [logs, setLogs] = useState<TuningLog[]>([]);
 
   const numWeight = Number(weight) || 0;
-
-  const processFile = useCallback((file: File) => {
-    if (!file.type.startsWith('image/')) return;
-    setIsProcessing(true);
-    setOcrMessage({ type: 'processing', text: '🔄 解析中...' });
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result as string);
-      setTimeout(() => {
-        setWeight(1425); setHp(580); setTorque(62);
-        setOcrMessage({ type: 'success', text: `重量: 1425kg, 馬力: 580hp を読み込みました！` });
-        setIsProcessing(false);
-      }, 1500);
-    };
-    reader.readAsDataURL(file);
-  }, []);
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault(); setIsDragging(false);
-    const file = e.dataTransfer.files?.[0]; if (file) processFile(file);
-  };
 
   const getInitialSetup = () => {
     if (!weight) return;
@@ -224,27 +198,6 @@ export default function App() {
     <div style={{ padding: '15px', maxWidth: '600px', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#1e293b', color: '#fff', borderRadius: '10px' }}>
       <h2>🏎️ FH6 チューニング・ループ・シミュレーター</h2>
       
-      <div onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }} onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }} onDrop={handleDrop}
-        style={{ backgroundColor: '#1e293b', border: '2px dashed', borderColor: isDragging ? '#38bdf8' : '#475569', padding: '10px', borderRadius: '6px', marginBottom: '15px', textAlign: 'center', transition: '0.2s', position: 'relative' }}>
-        {isDragging && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(56, 189, 248, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px', zIndex: 10 }}>ここにドロップ！</div>}
-        
-        <div style={{ opacity: isProcessing ? 0.3 : 1, fontSize: '12px' }}>
-          ここにスクショ画像を<strong style={{color: '#38bdf8'}}>ドラッグ＆ドロップ</strong>、または
-          <input 
-            type="file" 
-            accept="image/*" 
-            onChange={(e) => {
-              const file = e.target.files?.[0]; 
-              if (file) processFile(file);
-            }} 
-            style={{ display: 'none' }} 
-            id="upload" 
-          />
-          <label htmlFor="upload" style={{ display: 'inline-block', padding: '5px 10px', backgroundColor: '#475569', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', marginLeft: '5px' }}>ファイルを選択</label>
-        </div>
-        {ocrMessage && <div style={{ marginTop: '5px', color: '#38bdf8', fontSize: '11px', fontWeight: 'bold' }}>{ocrMessage.text}</div>}
-      </div>
-
       <div style={{ backgroundColor: '#334155', padding: '10px', borderRadius: '6px', marginBottom: '15px', fontSize: '12px' }}>
         <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
           <div style={{ flex: 1 }}>重量: <input type="number" value={weight} onChange={(e) => setWeight(e.target.value === '' ? '' : Number(e.target.value))} style={{ width: '50px', padding: '3px', borderRadius: '3px', backgroundColor: '#1e293b', color: '#fff', border: 'none' }} /> kg</div>
