@@ -47,19 +47,36 @@ interface TuningLog {
 
 // ==================== 🛠️ ガチ計算式・調整ロジック ====================
 
-// 💡 実際のフロント重量配分（%）を使って計算するように改良！
-const calculateInitialSetup = (weight: number, frontWeightRatioPercent: number, driveType: string, category: string): DetailedTuningProposal => {
+// 💡 トルク（torque）も計算の基準に組み込みました！
+const calculateInitialSetup = (weight: number, frontWeightRatioPercent: number, torque: number, driveType: string, category: string): DetailedTuningProposal => {
   const catModifier = category === 'ダート' || category === 'クロスカントリー' ? 0.15 : 0.25;
-  
-  // ユーザーが入力したフロント重量配分（例: 56% -> 0.56）を適用
   const frontRatio = frontWeightRatioPercent / 100;
 
-  const baseFrontSpring = (weight * frontRatio) * catModifier;
-  const baseRearSpring = (weight * (1 - frontRatio)) * catModifier;
+  let baseFrontSpring = (weight * frontRatio) * catModifier;
+  let baseRearSpring = (weight * (1 - frontRatio)) * catModifier;
+
+  // 💡 トルク補正ロジック
+  // 標準的な車（350 N·m）を基準として、トルクの太さに応じてデフとリアサスを補正
+  const torqueFactor = torque / 350; 
+  
+  let initialAccel = 50;
+  if (driveType === 'AWD') {
+    // AWDはトルクが太いほど、前後のトラクションを繋ぐためにデフ加速側を強く (40%〜75%の範囲)
+    initialAccel = Math.min(Math.max(45 * torqueFactor, 40), 75);
+  } else if (driveType === 'RWD') {
+    // RWDは大トルクだとすぐ滑るので、最初はデフを少し強めて両輪で押し出せるように (50%〜85%)
+    initialAccel = Math.min(Math.max(60 * torqueFactor, 50), 85);
+  }
+
+  // 💡 大トルク車（450 N·m以上）は、加速時にリアにしっかり荷重を乗せてグリップさせるため、
+  // リアのスプリングをわずかに（5%）しなやかにしてトラクションを稼ぎます
+  if ((driveType === 'RWD' || driveType === 'AWD') && torque >= 450) {
+    baseRearSpring *= 0.95; 
+  }
 
   return {
     id: 1,
-    notes: `初期提案 (実重量配分 ${frontWeightRatioPercent}% 基準)`,
+    notes: `初期提案 (重量配分:${frontWeightRatioPercent}% / トルク補正適用)`,
     tirePressure: { front: 2.1, rear: 2.1 },
     gearing: { final: 3.55, gears: [3.01, 1.95, 1.48, 1.15, 0.94, 0.79] },
     alignment: { 
@@ -78,7 +95,7 @@ const calculateInitialSetup = (weight: number, frontWeightRatioPercent: number, 
     },
     aero: { downforce: { front: 100, rear: 150 } },
     brake: { balance: 50, pressure: 100 },
-    differential: { accel: 50, decel: 20 },
+    differential: { accel: Math.round(initialAccel), decel: 20 },
   };
 };
 
@@ -131,18 +148,18 @@ const feedbackBrakeMap = { Good: '良好', TooStrong: '効きすぎる', NotWork
 const feedbackSpeedMap = { Good: '良好', MoreTopSpeed: '最高速足りない', BadAccel: '加速悪い' };
 
 export default function App() {
-  // 💡 YARISのスクリーンショットに合わせた初期値に変更
+  // 💡 YARISのスペックに合わせたデフォルト値（チューニング状態を想定）
+  const [powerKw, setPowerKw] = useState<number | ''>(290);
+  const [torqueNm, setTorqueNm] = useState<number | ''>(410); // 追加！
   const [weight, setWeight] = useState<number | ''>(1207);
   const [frontWeight, setFrontWeight] = useState<number | ''>(56);
-  const [powerKw, setPowerKw] = useState<number | ''>(290);
   
   const [carName] = useState("GR YARIS '21");
-  const [piClass] = useState('A 700');
   const [driveType, setDriveType] = useState('AWD');
   const [category, setCategory] = useState('ダート');
 
   const [currentProposal, setCurrentProposal] = useState<DetailedTuningProposal | null>(
-    calculateInitialSetup(1207, 56, 'AWD', 'ダート')
+    calculateInitialSetup(1207, 56, 410, 'AWD', 'ダート')
   );
   const [runCount, setRunCount] = useState(1);
 
@@ -153,11 +170,11 @@ export default function App() {
 
   const numWeight = Number(weight) || 0;
   const numFrontWeight = Number(frontWeight) || 50;
+  const numTorque = Number(torqueNm) || 350;
 
   const getInitialSetup = () => {
     if (!weight) return;
-    const initial = calculateInitialSetup(numWeight, numFrontWeight, driveType, category);
-    initial.notes = `初期提案 (実重量配分 ${numFrontWeight}% 基準)`;
+    const initial = calculateInitialSetup(numWeight, numFrontWeight, numTorque, driveType, category);
     setCurrentProposal(initial);
     setRunCount(1);
     setLapTime('');
@@ -179,7 +196,7 @@ export default function App() {
     const newLog: TuningLog = {
       id: Date.now(),
       runCount: runCount,
-      carName, piClass, driveType,
+      carName, piClass: 'A 700', driveType,
       feedback: { 
         handlingText: feedbackHandlingMap[feedback.handling], 
         brakeText: feedbackBrakeMap[feedback.brake], 
@@ -211,8 +228,8 @@ export default function App() {
         {/* 👈 左側：ゲーム画面の参照ガイド */}
         <div style={{ flex: '1 1 300px', backgroundColor: 'rgba(30, 41, 59, 0.85)', padding: '15px', borderRadius: '10px', boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}>
           <h3 style={{ margin: '0 0 10px 0', color: '#38bdf8', fontSize: '15px' }}>📸 入力値の確認場所</h3>
-          <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#cbd5e1', lineHeight: '1.4' }}>
-            ゲーム内の画面を参照して、右のツールにステータスを入力してください。
+          <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#cbd5e1', lineHeight: '1.4' }}>
+            ゲーム画面の左側（または詳細ステータス）に表示される数値を、<strong>上から順番に</strong>右の入力欄へ転記してください。
           </p>
           <div style={{ border: '2px solid #475569', borderRadius: '6px', overflow: 'hidden' }}>
             <img 
@@ -226,27 +243,42 @@ export default function App() {
         {/* 👉 右側：ツール本体 */}
         <div style={{ flex: '2 1 450px', backgroundColor: 'rgba(30, 41, 59, 0.95)', padding: '20px', borderRadius: '10px', boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}>
           
-          <div style={{ backgroundColor: '#334155', padding: '12px', borderRadius: '6px', marginBottom: '15px', fontSize: '13px' }}>
-            {/* 💡 入力項目をゲーム画面に合わせました */}
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'flex-end' }}>
-              <div style={{ flex: 1 }}>車重:<br/><input type="number" value={weight} onChange={(e) => setWeight(e.target.value === '' ? '' : Number(e.target.value))} style={{ width: '90%', padding: '4px', borderRadius: '3px', backgroundColor: '#1e293b', color: '#fff', border: '1px solid #475569' }} /> kg</div>
-              <div style={{ flex: 1 }}>フロント配分:<br/><input type="number" value={frontWeight} onChange={(e) => setFrontWeight(e.target.value === '' ? '' : Number(e.target.value))} style={{ width: '80%', padding: '4px', borderRadius: '3px', backgroundColor: '#1e293b', color: '#fff', border: '1px solid #475569' }} /> %</div>
-              <div style={{ flex: 1 }}>最高出力:<br/><input type="number" value={powerKw} onChange={(e) => setPowerKw(e.target.value === '' ? '' : Number(e.target.value))} style={{ width: '80%', padding: '4px', borderRadius: '3px', backgroundColor: '#1e293b', color: '#fff', border: '1px solid #475569' }} /> kW</div>
+          <div style={{ backgroundColor: '#334155', padding: '15px', borderRadius: '6px', marginBottom: '15px' }}>
+            <span style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '8px' }}>※ゲーム画面の上から順に入力</span>
+            
+            {/* 💡 ゲーム画面の表示順に合わせた縦並びフォーム */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '15px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px' }}>1. 最高出力 (kW):</span>
+                <input type="number" value={powerKw} onChange={(e) => setPowerKw(e.target.value === '' ? '' : Number(e.target.value))} style={{ width: '120px', padding: '5px', borderRadius: '4px', backgroundColor: '#1e293b', color: '#fff', border: '1px solid #475569' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px' }}>2. 最大トルク (N·m):</span>
+                <input type="number" value={torqueNm} onChange={(e) => setTorqueNm(e.target.value === '' ? '' : Number(e.target.value))} style={{ width: '120px', padding: '5px', borderRadius: '4px', backgroundColor: '#1e293b', color: '#fff', border: '1px solid #475569' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px' }}>3. 車重 (kg):</span>
+                <input type="number" value={weight} onChange={(e) => setWeight(e.target.value === '' ? '' : Number(e.target.value))} style={{ width: '120px', padding: '5px', borderRadius: '4px', backgroundColor: '#1e293b', color: '#fff', border: '1px solid #475569' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px' }}>4. フロント配分 (%):</span>
+                <input type="number" value={frontWeight} onChange={(e) => setFrontWeight(e.target.value === '' ? '' : Number(e.target.value))} style={{ width: '120px', padding: '5px', borderRadius: '4px', backgroundColor: '#1e293b', color: '#fff', border: '1px solid #475569' }} />
+              </div>
             </div>
             
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
-              <div>駆動系: {(['AWD', 'RWD', 'FWD'] as const).map(t => <button key={t} onClick={() => setDriveType(t)} style={{ padding: '4px 8px', margin: '0 3px', borderRadius: '4px', border: 'none', cursor: 'pointer', backgroundColor: driveType === t ? '#38bdf8' : '#475569', color: '#fff', fontWeight: driveType === t ? 'bold' : 'normal' }}>{t}</button>)}</div>
-              <div>用途: <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ padding: '4px', borderRadius: '4px', backgroundColor: '#1e293b', color: '#fff', border: '1px solid #475569' }}>{['ストリート', 'ダート', 'クロスカントリー'].map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '15px', borderTop: '1px solid #475569', paddingTop: '10px' }}>
+              <div style={{ fontSize: '13px' }}>駆動系: {(['AWD', 'RWD', 'FWD'] as const).map(t => <button key={t} onClick={() => setDriveType(t)} style={{ padding: '4px 8px', margin: '0 2px', borderRadius: '4px', border: 'none', cursor: 'pointer', backgroundColor: driveType === t ? '#38bdf8' : '#475569', color: '#fff', fontWeight: driveType === t ? 'bold' : 'normal' }}>{t}</button>)}</div>
+              <div style={{ fontSize: '13px', marginLeft: 'auto' }}>用途: <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ padding: '4px', borderRadius: '4px', backgroundColor: '#1e293b', color: '#fff', border: '1px solid #475569' }}>{['ストリート', 'ダート', 'クロスカントリー'].map(c => <option key={c} value={c}>{c}</option>)}</select></div>
             </div>
             
-            <button onClick={getInitialSetup} style={{ width: '100%', padding: '8px', backgroundColor: '#38bdf8', color: '#0f172a', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s' }}>この数値で初期提案を計算</button>
+            <button onClick={getInitialSetup} style={{ width: '100%', padding: '10px', backgroundColor: '#38bdf8', color: '#0f172a', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s', fontSize: '14px' }}>この数値で初期提案を計算</button>
           </div>
 
           {currentProposal && (
             <div style={{ padding: '15px', backgroundColor: '#0f172a', border: '2px solid #38bdf8', borderRadius: '8px', marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #38bdf8', paddingBottom: '5px', marginBottom: '10px' }}>
                 <h3 style={{ margin: 0, color: '#38bdf8', fontSize: '15px' }}>🔧 提案セッティング (仕様 #{runCount})</h3>
-                <span style={{ fontSize: '12px', color: '#a78bfa', fontWeight: 'bold' }}>{currentProposal.notes}</span>
+                <span style={{ fontSize: '11px', color: '#a78bfa', fontWeight: 'bold' }}>{currentProposal.notes}</span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
                 <div style={{ border: '1px solid #475569', padding: '8px', borderRadius: '6px', backgroundColor: '#1e293b' }}>
@@ -319,7 +351,7 @@ export default function App() {
                 {logs.map((log) => (
                   <div key={log.id} style={{ backgroundColor: '#1e293b', padding: '10px', borderRadius: '6px', fontSize: '12px', borderLeft: '4px solid #a78bfa' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed #475569', paddingBottom: '5px', marginBottom: '5px' }}>
-                      <span style={{ fontWeight: 'bold', color: '#38bdf8' }}>仕様 #{log.runCount} ({log.driveType}) - {log.proposal.notes}</span>
+                      <span style={{ fontWeight: 'bold', color: '#38bdf8' }}>仕様 #{log.runCount} ({log.driveType})</span>
                       <span style={{ color: '#4ade80', fontWeight: 'bold', fontSize: '13px' }}>⏱️ {log.lapTime}</span>
                     </div>
                     <p style={{ margin: '4px 0' }}>🧠 ハンドリング: {log.feedback.handlingText} | ブレーキ: {log.feedback.brakeText} | 速度: {log.feedback.speedText}</p>
